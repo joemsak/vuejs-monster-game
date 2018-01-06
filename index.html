@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Monster Slayer</title>
+    <script src="https://npmcdn.com/vue/dist/vue.js"></script>
+    <link rel="stylesheet" href="css/foundation.min.css">
+    <link rel="stylesheet" href="css/app.css">
+  </head>
+  <body>
+    <div id="app">
+      <section class="row">
+        <div class="small-6 columns">
+          <h1 class="text-center">YOU</h1>
+          <div class="healthbar">
+            <div class="healthbar text-center"
+              :style="{
+                backgroundColor: healthColor(player.health),
+                margin: 0,
+                color: 'white',
+                width: player.health + '%',
+              }"
+            >
+              {{ player.health }}
+            </div>
+          </div>
+        </div>
+        <div class="small-6 columns">
+          <h1 class="text-center">MONSTER</h1>
+
+          <div class="healthbar">
+            <div class="healthbar text-center"
+              :style="{
+                backgroundColor: healthColor(monster.health),
+                margin: 0,
+                color: 'white',
+                width: monster.health + '%',
+              }"
+            >
+              {{ monster.health }}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="!gameInProgress" class="row controls">
+        <div class="small-12 columns">
+          <button id="start-game" @click.prevent="startGame">START NEW GAME</button>
+        </div>
+      </section>
+
+      <section v-if="gameInProgress" class="row controls">
+        <div class="small-12 columns">
+          <button :disabled="!isPlayersTurn" id="attack" @click="attackMonster">ATTACK</button>
+          <button :disabled="!isPlayersTurn" id="special-attack" @click="attackMonster({ special: true })">SPECIAL ATTACK</button>
+          <button :disabled="!isPlayersTurn" id="heal" @click="healPlayer">HEAL</button>
+          <button :disabled="!isPlayersTurn" id="give-up" @click="giveUp">GIVE UP</button>
+        </div>
+      </section>
+
+      <section v-if="gameInProgress && actionLog.length" class="row log">
+        <div class="small-12 columns">
+          <ul>
+            <li v-for="entry in actionLog" :class="entry.actor + '-turn'">
+              {{ entry.actor }}
+              {{ entry.action }}
+              {{ entry.target }}
+              {{ entry.result }}
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section v-if="gameOver" class="row">
+        <div class="small-12 columns">
+          <h1 style="text-align: center;">
+            <template v-if="winner">
+              {{ winner }} has won!
+            </template>
+
+            <template v-else>
+              It's a tie!
+            </template>
+          </h1>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      new Vue({
+        el: "#app",
+        data: {
+          gameInProgress: false,
+          gameOver: false,
+          playerGaveUp: false,
+          isPlayersTurn: true,
+
+          actionLog: [],
+
+          player: {
+            health: 100,
+          },
+
+          monster: {
+            health: 100,
+          },
+        },
+
+        computed: {
+          winner: function() {
+            if (this.playerGaveUp)
+              return "monster";
+
+            return this.player.health < this.monster.health ?
+              "monster" : "player";
+          },
+        },
+
+        methods: {
+          startGame: function() {
+            this.monster.health = 100;
+            this.player.health = 100;
+            this.actionLog = [];
+            this.gameInProgress = true;
+            this.gameOver = false;
+            this.playerGaveUp = false;
+          },
+
+          giveUp: function() {
+            this.playerGaveUp = true;
+            this.endGame();
+          },
+
+          endGame: function() {
+            this.gameInProgress = false;
+            this.gameOver = true;
+          },
+
+          attackMonster: function(opts) {
+            opts = Object.assign({}, { special: false }, opts);
+            var attackAmt = this.getAttackAmount(opts.special);
+            this.removeHealth(this.monster, attackAmt);
+
+            this.log({
+              actor: "player",
+              action: this.getAttackType(opts.special, attackAmt),
+              result: attackAmt,
+              target: "monster",
+            });
+
+            this.retaliate({ attackWasSpecial: opts.special });
+          },
+
+          retaliate: function(opts) {
+            this.isPlayersTurn = false;
+
+            var vm = this;
+
+            setTimeout(function() {
+              opts = Object.assign({}, { attackWasSpecial: false }, opts);
+              var attackAmt = vm.getAttackAmount(opts.attackWasSpecial);
+              vm.removeHealth(vm.player, attackAmt);
+
+              vm.log({
+                actor: "monster",
+                action: vm.getAttackType(opts.attackWasSpecial, attackAmt),
+                result: attackAmt,
+                target: "player",
+              });
+
+              vm.isPlayersTurn = true;
+            }, 500);
+          },
+
+          removeHealth: function(target, amount) {
+            if (target.health - amount <= 0) {
+              target.health = 0;
+              this.endGame();
+            } else {
+              target.health -= amount;
+            }
+          },
+
+          healPlayer: function() {
+            var healAmt = this.getHealAmount({
+              currentHealth: this.player.health,
+            });
+
+            this.player.health += healAmt;
+
+            this.log({
+              actor: "player",
+              action: "healed",
+              result: healAmt,
+              target: "player",
+            });
+
+            this.retaliate();
+          },
+
+          healthColor: function(health) {
+            switch(true) {
+              case (health > 65): return "green";
+              case (health > 35): return "orange";
+              case (health > 15): return "darkred";
+              default: return "red";
+            };
+          },
+
+          log: function(entry) {
+            this.actionLog.unshift(entry);
+          },
+
+          getAttackType: function(special, attackAmt) {
+            if (attackAmt == 0) {
+              return "missed";
+            } else {
+              return special ? "attacked with special" : "attacked";
+            }
+          },
+
+          getAttackAmount: function(special) {
+            var maxAttack = special ? 15 : 10;
+            return Math.floor(Math.random() * Math.floor(maxAttack));
+          },
+
+          getHealAmount: function(opts) {
+            if (opts.currentHealth <= 90) {
+              var amt = Math.floor(Math.random() * Math.floor(10));
+              return amt == 0 ? 5 : amt;
+            } else {
+              return 100 - opts.currentHealth;
+            }
+          },
+        },
+      });
+    </script>
+  </body>
+</html>
