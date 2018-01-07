@@ -43,19 +43,12 @@ new Vue({
         {
           special: false,
           target: this.monster,
+          actor: this.player,
         },
         opts
       );
 
-      var attack = generateAttack(opts);
-      this.dispatchAttack(attack);
-
-      this.log.write({
-        actor: this.player,
-        action: attack.name,
-        amount: attack.amount,
-      });
-
+      this.dispatchAttack(opts);
       this.setMonsterTurn();
       this.monsterAttacks({ special: opts.special });
     },
@@ -69,19 +62,12 @@ new Vue({
           {
             special: false,
             target: vm.player,
+            actor: vm.monster,
           },
           opts
         );
 
-        var attack = generateAttack(opts);
-        vm.dispatchAttack(attack);
-
-        vm.log.write({
-          actor: vm.monster,
-          action: attack.name,
-          amount: attack.amount,
-        });
-
+        vm.dispatchAttack(opts);
         vm.setPlayerTurn();
       }, 500);
     },
@@ -99,13 +85,21 @@ new Vue({
       this.monsterAttacks();
     },
 
-    dispatchAttack: function(attack) {
+    dispatchAttack: function(opts) {
+      var attack = generateAttack(opts);
+
       if (attack.target.health - attack.amount <= 0) {
         attack.target.health = 0;
         this.endGame();
       } else {
         attack.target.health -= attack.amount;
       }
+
+      this.log.write({
+        actor: opts.actor,
+        action: attack.name,
+        amount: attack.amount,
+      });
     },
 
     playerGivesUp: function() {
