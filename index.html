@@ -6,6 +6,7 @@
     <link rel="stylesheet" href="css/foundation.min.css">
     <link rel="stylesheet" href="css/app.css">
   </head>
+
   <body>
     <div id="app">
       <section class="row">
@@ -31,6 +32,7 @@
             <div class="healthbar text-center"
               :style="{
                 backgroundColor: healthColor(monster.health),
+
                 margin: 0,
                 color: 'white',
                 width: monster.health + '%',
@@ -50,20 +52,19 @@
 
       <section v-if="gameInProgress" class="row controls">
         <div class="small-12 columns">
-          <button :disabled="!isPlayersTurn" id="attack" @click="attackMonster">ATTACK</button>
-          <button :disabled="!isPlayersTurn" id="special-attack" @click="attackMonster({ special: true })">SPECIAL ATTACK</button>
-          <button :disabled="!isPlayersTurn" id="heal" @click="healPlayer">HEAL</button>
-          <button :disabled="!isPlayersTurn" id="give-up" @click="giveUp">GIVE UP</button>
+          <button :disabled="!player.isDeciding" id="attack" @click="attackMonster">ATTACK</button>
+          <button :disabled="!player.isDeciding" id="special-attack" @click="attackMonster({ special: true })">SPECIAL ATTACK</button>
+          <button :disabled="!player.isDeciding" id="heal" @click="healPlayer">HEAL</button>
+          <button :disabled="!player.isDeciding" id="give-up" @click="giveUp">GIVE UP</button>
         </div>
       </section>
 
       <section v-if="gameInProgress && actionLog.length" class="row log">
         <div class="small-12 columns">
           <ul>
-            <li v-for="entry in actionLog" :class="entry.actor + '-turn'">
+            <li v-for="entry in actionLog" :class="entry.actor.toLowerCase() + '-turn'">
               {{ entry.actor }}
               {{ entry.action }}
-              {{ entry.target }}
               {{ entry.result }}
             </li>
           </ul>
@@ -91,23 +92,25 @@
         data: {
           gameInProgress: false,
           gameOver: false,
-          playerGaveUp: false,
-          isPlayersTurn: true,
 
           actionLog: [],
 
           player: {
             health: 100,
+            justHealed: false,
+            gaveUp: false,
+            isDeciding: true,
           },
 
           monster: {
             health: 100,
+            isAttacking: false,
           },
         },
 
         computed: {
           winner: function() {
-            if (this.playerGaveUp)
+            if (this.player.gaveUp)
               return "monster";
 
             return this.player.health < this.monster.health ?
@@ -122,11 +125,11 @@
             this.actionLog = [];
             this.gameInProgress = true;
             this.gameOver = false;
-            this.playerGaveUp = false;
+            this.player.gaveUp = false;
           },
 
           giveUp: function() {
-            this.playerGaveUp = true;
+            this.player.gaveUp = true;
             this.endGame();
           },
 
@@ -137,37 +140,40 @@
 
           attackMonster: function(opts) {
             opts = Object.assign({}, { special: false }, opts);
-            var attackAmt = this.getAttackAmount(opts.special);
-            this.removeHealth(this.monster, attackAmt);
+            var attack = this.getAttack(opts);
+            this.removeHealth(this.monster, attack.damage);
 
             this.log({
-              actor: "player",
-              action: this.getAttackType(opts.special, attackAmt),
-              result: attackAmt,
-              target: "monster",
+              actor: "Player",
+              action: attack.action,
+              result: attack.damage,
             });
 
-            this.retaliate({ attackWasSpecial: opts.special });
+            this.retaliate({ special: opts.special });
           },
 
           retaliate: function(opts) {
-            this.isPlayersTurn = false;
+            this.player.isDeciding = false;
+            this.monster.isAttacking = true;
 
             var vm = this;
 
             setTimeout(function() {
-              opts = Object.assign({}, { attackWasSpecial: false }, opts);
-              var attackAmt = vm.getAttackAmount(opts.attackWasSpecial);
-              vm.removeHealth(vm.player, attackAmt);
+              opts = Object.assign({}, { special: false, }, opts);
+
+              var attack = vm.getAttack(opts);
+
+              vm.removeHealth(vm.player, attack.damage);
 
               vm.log({
-                actor: "monster",
-                action: vm.getAttackType(opts.attackWasSpecial, attackAmt),
-                result: attackAmt,
-                target: "player",
+                actor: "Monster",
+                action: attack.action,
+                result: attack.damage,
               });
 
-              vm.isPlayersTurn = true;
+              vm.player.isDeciding = true;
+              vm.player.justHealed = false;
+              vm.monster.isAttacking = false;
             }, 500);
           },
 
@@ -186,12 +192,12 @@
             });
 
             this.player.health += healAmt;
+            this.player.justHealed = true;
 
             this.log({
-              actor: "player",
+              actor: "Player",
               action: "healed",
               result: healAmt,
-              target: "player",
             });
 
             this.retaliate();
@@ -210,17 +216,54 @@
             this.actionLog.unshift(entry);
           },
 
-          getAttackType: function(special, attackAmt) {
-            if (attackAmt == 0) {
-              return "missed";
-            } else {
-              return special ? "attacked with special" : "attacked";
-            }
-          },
+          getAttack: function(opts) {
+            var vm = this;
+            var attack = {
+              damage: 0,
+              action: "attacked",
+            };
 
-          getAttackAmount: function(special) {
-            var maxAttack = special ? 15 : 10;
-            return Math.floor(Math.random() * Math.floor(maxAttack));
+            attack.isSpecial = setSpecialAttack(opts.special);
+            attack.damage = calculateAttackDamage(attack);
+            attack.action = getAttackAction(attack);
+
+            return attack;
+
+            function setSpecialAttack(special) {
+              if (vm.monster.isAttacking && special) {
+                // random chance that monster retaliates
+                // against a special with special
+                var idx = [Math.floor(Math.random()*2)];
+                return new Array(true, false)[idx];
+              } else {
+                return special;
+              }
+            }
+
+            function calculateAttackDamage(attack) {
+              var maxDamage = 10;
+
+              if (attack.isSpecial) {
+                maxDamage = 15;
+              }
+
+              if (vm.monster.isAttacking && vm.player.justHealed)
+                maxDamage = 5;
+
+              return Math.floor(
+                Math.random() * Math.floor(maxDamage)
+              );
+            }
+
+            function getAttackAction(attack) {
+              if (attack.damage == 0) {
+                return "missed";
+              } else if (attack.isSpecial) {
+                return "attacked with SPECIAL!";
+              } else {
+                return "attacked";
+              }
+            }
           },
 
           getHealAmount: function(opts) {
